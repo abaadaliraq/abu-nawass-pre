@@ -172,7 +172,7 @@ const slides: Slide[] = [
     body: "خريطة توضيحية للعقارات والمساحات المستهدفة ضمن نطاق المشروع.",
     custom: "mapImage",
     mapImage: {
-      src: "/images/sold-house-on-map.jpg",
+      src: "/images/sold-house-map.jpg",
       showPropertyLegend: true,
       width: 1920,
       height: 1080,
