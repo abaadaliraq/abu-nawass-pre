@@ -18,7 +18,10 @@ import {
   Maximize2,
   Minimize2,
   Printer,
+  RotateCcw,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import Image from "next/image";
 import {
@@ -68,6 +71,14 @@ type Slide = {
     openUrl: string;
   };
 
+  mapImage?: {
+    src: string;
+    width: number;
+    height: number;
+    alt: string;
+    showPropertyLegend?: boolean;
+  };
+
   closing?: string;
   custom?:
     | "location"
@@ -75,7 +86,8 @@ type Slide = {
     | "revenue"
     | "calculator"
     | "scalability"
-    | "gallery";
+    | "gallery"
+    | "mapImage";
   galleryKind?: "current" | "vision";
   variant?:
     | "hero"
@@ -88,7 +100,8 @@ type Slide = {
     | "revenue"
     | "calculator"
     | "scalability"
-    | "gallery";
+    | "gallery"
+    | "mapImage";
 };
 
 const slides: Slide[] = [
@@ -100,6 +113,20 @@ const slides: Slide[] = [
     image: "/images/project/street-panorama.jpg",
     imagePosition: "center center",
     variant: "hero",
+  },
+
+  {
+    eyebrow: "موقع المشروع ومحاور الوصول",
+    title: "موقع المشروع ومحاور الوصول",
+    body: "خريطة توضيحية لموقع المشروع وعلاقته بمحاور الحركة والوصول المحيطة.",
+    custom: "mapImage",
+    mapImage: {
+      src: "/images/location-on-map.jpg",
+      width: 1920,
+      height: 1080,
+      alt: "موقع المشروع ومحاور الوصول",
+    },
+    variant: "gallery",
   },
   {
     eyebrow: "02 — الفرصة",
@@ -136,6 +163,21 @@ const slides: Slide[] = [
     body: "توثيق بصري لحالة الشارع والبيوت التراثية والتجاوزات والأسلاك والبنية الخدمية قبل بدء أعمال التأهيل.",
     custom: "gallery",
     galleryKind: "current",
+    variant: "gallery",
+  },
+
+  {
+    eyebrow: "العقارات والمساحات المستهدفة ضمن نطاق المشروع",
+    title: "العقارات والمساحات المستهدفة ضمن نطاق المشروع",
+    body: "خريطة توضيحية للعقارات والمساحات المستهدفة ضمن نطاق المشروع.",
+    custom: "mapImage",
+    mapImage: {
+      src: "/images/sold-house-on-map.jpg",
+      showPropertyLegend: true,
+      width: 1920,
+      height: 1080,
+      alt: "العقارات والمساحات المستهدفة ضمن نطاق المشروع",
+    },
     variant: "gallery",
   },
   {
@@ -475,7 +517,7 @@ function isSlideNavigationBlocked(target: EventTarget | null) {
   return target instanceof Element
     ? Boolean(
         target.closest(
-          "iframe, .interactive-map, .financial-calculator, .revenue-table-wrap, .masonry-gallery, .gallery-lightbox, input, textarea, select, button, a, [data-prevent-slide-navigation]",
+          "iframe, .interactive-map, .financial-calculator, .revenue-table-wrap, .gallery-lightbox, .map-lightbox, input, textarea, select, a, [data-prevent-slide-navigation]",
         ),
       )
     : false;
@@ -1399,6 +1441,211 @@ function ScalabilitySlide() {
   );
 }
 
+function MapImageSlide({ slide }: { slide: Slide }) {
+  const image = slide.mapImage;
+  const [isOpen, setIsOpen] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const dragStart = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
+
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  const closeLightbox = useCallback(() => {
+    setIsOpen(false);
+    resetZoom();
+    pointers.current.clear();
+    pinchStart.current = null;
+    dragStart.current = null;
+  }, [resetZoom]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeLightbox();
+    };
+    document.documentElement.classList.add("lightbox-open");
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.documentElement.classList.remove("lightbox-open");
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [closeLightbox, isOpen]);
+
+  if (!image) return null;
+
+  const isTargetedPropertiesMap = Boolean(image.showPropertyLegend);
+
+  const zoomBy = (amount: number) => {
+    setScale((current) => Math.min(4, Math.max(1, Number((current + amount).toFixed(2)))));
+  };
+
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    zoomBy(event.deltaY < 0 ? 0.18 : -0.18);
+  };
+
+  const pointerDistance = () => {
+    const values = Array.from(pointers.current.values());
+    if (values.length < 2) return 0;
+    return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size === 2) {
+      pinchStart.current = { distance: pointerDistance(), scale };
+      dragStart.current = null;
+      return;
+    }
+
+    if (scale > 1) {
+      dragStart.current = {
+        x: event.clientX,
+        y: event.clientY,
+        px: position.x,
+        py: position.y,
+      };
+    }
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(event.pointerId)) return;
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size >= 2 && pinchStart.current) {
+      const next = pinchStart.current.scale * (pointerDistance() / pinchStart.current.distance);
+      setScale(Math.min(4, Math.max(1, Number(next.toFixed(2)))));
+      return;
+    }
+
+    if (dragStart.current && scale > 1) {
+      setPosition({
+        x: dragStart.current.px + event.clientX - dragStart.current.x,
+        y: dragStart.current.py + event.clientY - dragStart.current.y,
+      });
+    }
+  };
+
+  const onPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size === 0) dragStart.current = null;
+    if (scale <= 1) setPosition({ x: 0, y: 0 });
+  };
+
+  return (
+    <div className={`map-image-slide ${isTargetedPropertiesMap ? "has-property-legend" : ""}`}>
+      <div className="map-image-layout">
+      <button
+        aria-label={`فتح ${image.alt}`}
+        className="map-image-button"
+        onClick={() => setIsOpen(true)}
+        type="button"
+      >
+        <Image
+          alt={image.alt}
+          className="map-slide-image"
+          height={image.height}
+          priority={image.src.includes("location-on-map")}
+          src={image.src}
+          width={image.width}
+        />
+      </button>
+      {isTargetedPropertiesMap ? (
+        <aside className="property-map-legend" aria-label="توضيح ألوان العقارات">
+          <strong>توضيح ألوان العقارات</strong>
+          <div className="property-legend-item">
+            <span className="property-legend-swatch is-restoration" />
+            <div>
+              <b>عقارات مستهدفة للترميم وإعادة التأهيل</b>
+              <p>يمثل اللون الأخضر العقارات التي تحتاج إلى معالجة عمرانية وترميم ضمن نطاق المشروع.</p>
+            </div>
+          </div>
+          <div className="property-legend-item">
+            <span className="property-legend-swatch is-existing" />
+            <div>
+              <b>عقارات قائمة لا تحتاج إلى ترميم</b>
+              <p>يمثل اللون الأزرق مشاريع قائمة ومالكوها حاليون، وتشمل الفندق، متحف بيت التحفيات، وبوابة آسيا للتأمين.</p>
+            </div>
+          </div>
+          <div className="property-legend-item">
+            <span className="property-legend-swatch is-demolition" />
+            <div>
+              <b>عقارات متهالكة تحتاج إلى إزالة</b>
+              <p>يمثل اللون الأحمر العقارات ذات الحالة الإنشائية المتدهورة والتي تتطلب الهدم ضمن خطة معالجة النطاق.</p>
+            </div>
+          </div>
+        </aside>
+      ) : null}
+      </div>
+
+      {isOpen ? (
+        <div className="map-lightbox" data-prevent-slide-navigation="true" role="dialog" aria-modal="true">
+          <div className="map-lightbox-toolbar" aria-label="التحكم بالصورة">
+            <button aria-label="تكبير" onClick={() => zoomBy(0.25)} type="button">
+              <ZoomIn size={18} />
+            </button>
+            <button aria-label="تصغير" onClick={() => zoomBy(-0.25)} type="button">
+              <ZoomOut size={18} />
+            </button>
+            <button aria-label="إعادة الضبط" onClick={resetZoom} type="button">
+              <RotateCcw size={18} />
+            </button>
+            <button aria-label="إغلاق" onClick={closeLightbox} type="button">
+              <X size={20} />
+            </button>
+          </div>
+          <div
+            className={`map-lightbox-stage ${scale > 1 ? "is-zoomed" : ""}`}
+            onPointerCancel={onPointerEnd}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerEnd}
+            onWheel={onWheel}
+          >
+            <Image
+              alt={image.alt}
+              className="map-lightbox-image"
+              draggable={false}
+              height={image.height}
+              src={image.src}
+              style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
+              width={image.width}
+            />
+          </div>
+          <div className="map-lightbox-caption">
+            <strong>{slide.title}</strong>
+            <span>{Math.round(scale * 100)}%</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PreparedByBadge() {
+  return (
+    <div className="prepared-by-badge">
+      <Image
+        alt="شعار أبعاد العراق"
+        className="prepared-by-logo"
+        height={2000}
+        priority
+        src="/images/abaad-logo.png"
+        width={2000}
+      />
+      <span>تم إعداد العرض التقديمي بواسطة مكتب أبعاد العراق للحلول البرمجية</span>
+    </div>
+  );
+}
+
 type GalleryImageItem =
   | (typeof currentStreetGallery)[number]
   | (typeof visionStreetGallery)[number];
@@ -1424,6 +1671,7 @@ function GallerySlide({ kind }: { kind: "current" | "vision" }) {
     Boolean(oppositeItem) &&
     isGalleryImageAvailable(activeItem) &&
     isGalleryImageAvailable(oppositeItem as GalleryImageItem);
+  const compareButtonLabel = kind === "current" ? "بعد" : "قبل";
 
   const closeLightbox = useCallback(() => {
     setActiveIndex(null);
@@ -1462,7 +1710,7 @@ function GallerySlide({ kind }: { kind: "current" | "vision" }) {
   }, [activeIndex, closeLightbox, goLightbox]);
 
   return (
-    <div className="masonry-gallery" data-prevent-slide-navigation="true">
+    <div className="masonry-gallery">
       <motion.div
         className="gallery-grid"
         initial="hidden"
@@ -1595,7 +1843,7 @@ function GallerySlide({ kind }: { kind: "current" | "vision" }) {
                   onClick={() => setCompareMode((current) => !current)}
                   type="button"
                 >
-                  مقارنة قبل / بعد
+                  {compareMode ? "إخفاء المقارنة" : compareButtonLabel}
                 </button>
               ) : null}
             </div>
@@ -1799,6 +2047,7 @@ export function HeritagePresentation() {
               <LocationSlide slide={slide} />
             ) : (
               <>
+                {index === 0 ? <PreparedByBadge /> : null}
                 <p className="eyebrow">{slide.eyebrow}</p>
                 <h1>{slide.title}</h1>
                 {slide.subtitle ? (
@@ -1817,6 +2066,7 @@ export function HeritagePresentation() {
             {slide.custom === "gallery" && slide.galleryKind ? (
               <GallerySlide kind={slide.galleryKind} />
             ) : null}
+            {slide.custom === "mapImage" ? <MapImageSlide slide={slide} /> : null}
 
             {!slide.custom && slide.metrics ? (
               <motion.div
